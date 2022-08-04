@@ -1,6 +1,6 @@
 import time
 
-from selenium import webdriver
+from selenium.webdriver import Chrome
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
@@ -12,41 +12,58 @@ from selenium.webdriver.chrome.service import Service
 # import urllib.request
 # from selenium.webdriver.remote.webelement import WebElement
 
+class Pin:
+    def __init__(self, name, link):
+        self.name = name
+        self.link = link
+
+    name = ""
+    link = ""
+
+class Folder:
+    def __init__(self, name):
+        self.name = name
+
+    name = ""
+    pins = []
+
+class ChromeDriver(Chrome):
+    def __init__(self, isHeadless=True):
+        DRIVER_PATH = "/usr/bin/chromedriver"
+        service = Service(executable_path=DRIVER_PATH)
+        options = Options()
+        if isHeadless:
+            options.headless = isHeadless
+        else:
+            options.add_argument("--window-size=1920,1080")
+
+        super(ChromeDriver, self).__init__(options=options, service=service)
 
 class Pinterest:
     Webpage = "https://za.pinterest.com"
     FolderXPath = "//div[@data-test-id='board-section']"
     PinLinkXPath = "//*[starts-with(@href,'/pin/')]"
 
-    def __init__(self, home, headless=True):
+    def __init__(self, home = "", isHeadless=True):
         self.home = home
         self.homePath = f'{self.Webpage}' + home
-
-        DRIVER_PATH = "/usr/bin/chromedriver"
-        service = Service(executable_path=DRIVER_PATH)
-        if headless:
-            options = Options()
-            options.headless = headless
-            options.add_argument("--window-size=1920,1080")
-            self.driver = webdriver.Chrome(options=options, service=service)
-        else:
-            self.driver = webdriver.Chrome(service=service)
+        self.driver = ChromeDriver(isHeadless)
 
     def getAllFoldersIn(self, folderName):
         path = f'{self.homePath}' + folderName
         self.driver.get(path)
-        folders = self.driver.find_elements(By.XPATH, self.FolderXPath)
+        foundFolders = self.driver.find_elements(By.XPATH, self.FolderXPath)
 
         # TEST
-        print(len(folders))
+        print(len(foundFolders))
         # TEST
-        return folders
+        return foundFolders
 
-    def getAllPinsIn(self, folder):
-        folder.click()
+    def getAllPinsIn(self, foundFolder):
+        foundFolder.click()
         time.sleep(20)
 
-        pins = []
+        foundPins = []
 
         prevPinCount = 0
         scrollAttempts = 0
@@ -54,9 +71,9 @@ class Pinterest:
             self.driver.execute_script("window.scrollBy(0, 250)")
             time.sleep(1)
 
-            self.appendPinsFromCurrentPage(pins)
+            self.appendPinsFromCurrentPage(foundPins)
 
-            pinCount = len(pins)
+            pinCount = len(foundPins)
             if pinCount == prevPinCount:
                 scrollAttempts = scrollAttempts + 1
             else:
@@ -64,17 +81,21 @@ class Pinterest:
                 prevPinCount = pinCount
 
         # TEST
-        print(len(pins))
+        print(len(foundPins))
 
-        return pins
+        return foundPins
 
-    def appendPinsFromCurrentPage(self, pins):
+    def appendPinsFromCurrentPage(self, foundPins):
         files = self.driver.find_elements(By.XPATH, self.PinLinkXPath)
         for file in files:
             ref = file.get_attribute('href')
-            if ref in pins:
+            if ref in foundPins:
                 continue
-            pins.append(ref)
+            foundPins.append(ref)
+
+    def getFolderName(self, foundFolder):
+        name = foundFolder.get_attribute('title')
+        return name
 
     def close(self):
         self.driver.close()
@@ -92,6 +113,11 @@ if __name__ == '__main__':
     pins = pinterest.getAllPinsIn(folder)
 
     pinLinksExportFilePath = "pins.txt"
+    f = open(pinLinksExportFilePath, 'w')
+
+    #folderName = pinterest.getFolderName(folder)
+    #f.write(folderName + "\n")
+
     f = open(pinLinksExportFilePath, 'w')
     for pin in pins:
         f.write(pin + "\n")
