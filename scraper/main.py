@@ -47,6 +47,7 @@ class Pinterest:
     Webpage = "https://za.pinterest.com"
     FolderXPath = "//div[@data-test-id='board-section']"
     PinLinkXPath = "//*[starts-with(@href,'/pin/')]"
+    FolderButtonXPath = "//div[@role='button' and @tabindex='0']/parent::div[@data-test-id='board-section']"
 
     def __init__(self, home="", isHeadless=True):
         self.home = home
@@ -66,15 +67,72 @@ class Pinterest:
     def findNewFolders(self, existingFolderNames):
         newFolders = dict()
 
-        folders = self.driver.find_elements(By.XPATH, self.FolderXPath)
+        folders = self.driver.find_elements(By.XPATH, self.FolderButtonXPath)
         for folder in folders:
             title = folder.text
+            if title in existingFolderNames:
+                continue
             existingFolderNames.append(title)
             newFolders[title] = folder
 
         return newFolders
 
+    def findNewFolder(self, existingFolderNames):
+        foundFolders = self.driver.find_elements(By.XPATH, self.FolderButtonXPath)
+        for foundFolder in foundFolders:
+            title = foundFolder.text
+            if title in existingFolderNames:
+                continue
+            existingFolderNames.append(title)
+            return foundFolder
+
+        return None
+
+
     def getAllPinsFrom(self, folderName):
+        path = f'{self.homePath}' + folderName
+        self.driver.get(path)
+
+        foundPins = dict()
+        foundFolderNames = []
+
+        scrollAttempts = 0
+        scrollDepth = 0
+        while scrollAttempts <= 3:
+            currentFolder = self.findNewFolder(foundFolderNames)
+
+            try:
+                currentFolder.click()
+            except:
+                scrollAttempts = scrollAttempts + 1
+                self.driver.execute_script("window.scrollBy(0, 250)")
+                scrollDepth = scrollDepth + 250
+                time.sleep(1)
+                continue
+
+            foundFolderName = foundFolderNames[-1]
+
+            # Test
+            print("Folder Found: " + f'{foundFolderName}')
+            # Test
+
+            # get all pins in this folder
+            folderPins = self.getAllPinsIn(currentFolder)
+            foundPins[foundFolderName] = folderPins
+            scrollAttempts = 0
+
+            # Test
+            print("No. of pins found: " + f'{len(folderPins)}')
+            # Test
+
+            # move back to original tab
+            self.driver.get(path)
+            self.driver.execute_script("window.scrollBy(0, " + f'{scrollDepth}' + ")")
+            time.sleep(1)
+
+        return foundPins
+
+    def getAllPinsFromUsingTabs(self, folderName):
         path = f'{self.homePath}' + folderName
         self.driver.get(path)
 
@@ -98,8 +156,8 @@ class Pinterest:
 
             for currentFolderName, currentFolder in newFolders.items():
                 try:
-                    currentFolder.send_keys(Keys.chord(Keys.CONTROL, Keys.ENTER))
-                    #currentFolder.click()
+                    # TODO: open in new tab
+                    currentFolder.click()
                 except:
                     continue
 
@@ -116,12 +174,6 @@ class Pinterest:
                 # move back to original tab
                 self.driver.driver.close();
                 self.driver.driver.switch_to.window(tabs[0])
-
-        # TEST
-        print(len(foundPins))
-        for folderPins in foundPins:
-            print(len(folderPins))
-        # TEST
 
         return foundPins
 
@@ -145,8 +197,6 @@ class Pinterest:
             self.driver.execute_script("window.scrollBy(0, 250)")
             time.sleep(1)
 
-        # TEST
-        print(len(foundPins))
         self.driver.back()
         time.sleep(20)
 
