@@ -4,6 +4,10 @@ from selenium.webdriver import Chrome, Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common import action_chains
+
+import os
+import codecs
 
 
 # from selenium.webdriver import Keys
@@ -23,6 +27,9 @@ class ChromeDriver(Chrome):
         else:
             options.add_argument("--window-size=1920,1080")
 
+        prefs = {"download.default_directory": "/home"}
+        options.add_experimental_option("prefs", prefs)
+
         super(ChromeDriver, self).__init__(options=options, service=service)
 
 
@@ -31,7 +38,8 @@ class Pinterest:
     FolderXPath = "//div[@data-test-id='board-section']"
     PinLinkXPath = "//*[starts-with(@href,'/pin/')]"
     PinRecipeLinkXPath = "//meta[@property='pinterestapp:source']"
-    DownloadButtonId = "wprm-print-button-print"
+    PrintButtonId = "wprm-print-button-print"
+    SaveButtonXPath = "//cr-button[@class='action-button']"
 
     PrintLinkText = "Print"
     JumpToRecipeLinkText = "Jump to Recipe"
@@ -83,13 +91,11 @@ class Pinterest:
                 # move back to original tab
                 self.driver.back()
                 self.driver.execute_script("window.scrollBy(0, " + f'{scrollDepth}' + ")")
-                # time.sleep(1)
 
             else:
                 scrollAttempts = scrollAttempts + 1
                 self.driver.execute_script("window.scrollBy(0, 250)")
                 scrollDepth = scrollDepth + 250
-                # time.sleep(1)
                 continue
 
         return foundPins
@@ -132,7 +138,6 @@ class Pinterest:
             if pinCount == prevPinCount:
                 scrollAttempts = scrollAttempts + 1
                 self.driver.execute_script("window.scrollBy(0, 250)")
-                # time.sleep(1)
             else:
                 scrollAttempts = 0
                 prevPinCount = pinCount
@@ -152,45 +157,36 @@ class Pinterest:
         # time.sleep(20)
         try:
             visitor = self.driver.find_element(By.XPATH, self.PinRecipeLinkXPath)
-            # Test
-            print("Pin page found")
-            # Test
         except:
             # Test
-            print("Failed to find pin page")
+            print("Failed to find pin")
             # Test
-            return False
+            return None
 
         recipeLink = visitor.get_attribute('content')
         self.driver.get(recipeLink)
 
         try:
             printRecipeButton = self.driver.find_element(By.PARTIAL_LINK_TEXT, self.PrintLinkText)
-            # Test
-            print(f'{printRecipeButton.text}' + " button found")
-            # Test
         except:
             try:
                 recipeButton = self.driver.find_element(By.PARTIAL_LINK_TEXT, self.JumpToRecipeLinkText)
 
                 recipeButton.click()
                 printRecipeButton = self.driver.find_element(By.PARTIAL_LINK_TEXT, self.PrintLinkText)
-                # Test
-                print(f'{printRecipeButton.text}' + " button found")
-                # Test
             except:
                 print("Failed to find recipe")
-                return False
+                return None
 
         printRecipeLink = printRecipeButton.get_attribute('href')
         self.driver.get(printRecipeLink)
 
-        saveAsPdfButton = self.driver.find_element(By.ID, self.DownloadButtonId)
-        # Test
-        print(f'{saveAsPdfButton.text}' + " button found")
-        # Test
-        saveAsPdfButton.click()
-        return True
+        # saveAsPdfButton = self.driver.find_element(By.ID, self.PrintButtonId)
+        # # Test
+        # print("recipe found")
+        # # Test
+        # saveAsPdfButton.click()
+        return self.driver.page_source
 
     def close(self):
         self.driver.close()
@@ -203,6 +199,16 @@ class FileHandler:
             for value in values:
                 f.writelines(value)
             f.writelines()
+        f.close()
+
+    def writeHtmlToFolder(folderPath, fileName, html):
+        if not os.path.exists(folderPath):
+            os.mkdir(folderPath)
+        fullFileName = f'{fileName}' + ".html"
+        filePath = os.path.join(folderPath, fullFileName)
+
+        f = codecs.open(filePath, "w", "utf−8")
+        f.write(html)
         f.close()
 
     def readDictFromFile(filePath):
@@ -229,6 +235,7 @@ if __name__ == '__main__':
     homePath = "/JumperClwn"
     pinLinksExportFilePath = "pins.txt"
     failedPinLinksExportFilePath = "failed_pins.txt"
+    pinsPath = os.path.join(os.path.join(os.path.expanduser('~')), 'Desktop')
     headless = False
     pinterest = Pinterest(homePath, headless)
 
@@ -247,14 +254,31 @@ if __name__ == '__main__':
 
         FileHandler.writeDictToFile(pinLinksExportFilePath, pins)
 
+    #Test
+    fileNo = 0
+    #test
+
     # Now we have the new pins, open them and save their content.
     failedPins = dict()
     for folderName, pinLinks in pins.items():
         failedPinLinks = []
         for pinLink in pinLinks:
-            if pinterest.getRecipeFromPin(pinLink):
+            recipeHtml = pinterest.getRecipeFromPin(pinLink)
+            if recipeHtml is None:
+                failedPinLinks.append(pinLink)
                 continue
-            failedPinLinks.append(pinLink)
+            try:
+                folderName = folderName.removesuffix("\n")
+                folderPath = os.path.join(pinsPath, folderName)
+                FileHandler.writeHtmlToFolder(folderPath, f'{fileNo}', recipeHtml)
+                fileNo = fileNo + 1
+                # Test
+                print("Recipe written to folder: " + f'{folderName}')
+                # Test
+            except:
+                failedPinLinks.append(pinLink)
+                print("Failed to write recipe")
+                continue
 
         if len(failedPinLinks) != 0:
             failedPins[folderName] = failedPinLinks
