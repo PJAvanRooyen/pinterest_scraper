@@ -27,9 +27,6 @@ class ChromeDriver(Chrome):
         else:
             options.add_argument("--window-size=1920,1080")
 
-        prefs = {"download.default_directory": "/home"}
-        options.add_experimental_option("prefs", prefs)
-
         super(ChromeDriver, self).__init__(options=options, service=service)
 
 
@@ -154,6 +151,7 @@ class Pinterest:
 
     def getRecipeFromPin(self, pinLink):
         self.driver.get(pinLink)
+        pinInfo = PinInfo(self.driver.title, pinLink)
         # time.sleep(20)
         try:
             visitor = self.driver.find_element(By.XPATH, self.PinRecipeLinkXPath)
@@ -186,7 +184,9 @@ class Pinterest:
         # print("recipe found")
         # # Test
         # saveAsPdfButton.click()
-        return self.driver.page_source
+
+        pinInfo.pageSource = self.driver.page_source
+        return pinInfo
 
     def close(self):
         self.driver.close()
@@ -202,16 +202,39 @@ class FileHandler:
         f.close()
 
     def writeHtmlToFolder(folderPath, fileName, html):
-        if not os.path.exists(folderPath):
-            os.mkdir(folderPath)
+        FileHandler.makeDir(folderPath)
+
         fullFileName = f'{fileName}' + ".html"
         filePath = os.path.join(folderPath, fullFileName)
+        if os.path.exists(filePath):
+            print("Recipe already added")
+            return
 
         f = codecs.open(filePath, "w", "utf−8")
         f.write(html)
         f.close()
+        # Test
+        print("Recipe written to: " + f'{folderPath}' + "/" + f'{pinInfo.name}')
+        # Test
+
+    def makeDir(folderPath):
+        if os.path.exists(folderPath):
+            return
+
+        path = folderPath.split('/') or [folderPath]
+        currentPath = ""
+        if path[0] == "":
+            path.pop(0)
+            currentPath = "/"
+        while len(path) != 0:
+            currentPath = os.path.join(currentPath, path.pop(0))
+            if not os.path.exists(currentPath):
+                os.mkdir(currentPath)
 
     def readDictFromFile(filePath):
+        if not os.path.exists(filePath):
+            return dict()
+
         f = open(filePath, 'r')
         fileLines = f.readlines()
         f.close()
@@ -231,11 +254,51 @@ class FileHandler:
 
         return dictionary
 
+class PinterestFileHandler(FileHandler):
+    def writeFailedPinsFile(filePath, failedPinDict):
+        f = open(filePath, 'w')
+        for folderName, pinItems in failedPinDict.items():
+            f.writelines(folderName)
+            for pinItem in pinItems:
+                f.writelines(pinItem.link + "\t" + pinItem.name)
+            f.writelines()
+        f.close()
+
+    def readFailedPinsFile(self):
+        if not os.path.exists(filePath):
+            return dict()
+
+        f = open(filePath, 'r')
+        fileLines = f.readlines()
+        f.close()
+
+        pinDict = dict()
+        isFolderName = True
+        currentFolderName = ""
+        for line in fileLines:
+            if isFolderName:
+                currentFolderName = line
+                pinDict[currentFolderName] = []
+                isFolderName = False
+            elif line == "\n":
+                isFolderName = True
+            else:
+                pinParts = line.split("\t")
+                pin = PinInfo(pinParts[0], pinParts[1])
+                pinDict[currentFolderName].append(pin)
+
+        return pinDict
+class PinInfo:
+    def __init__(self, name, link):
+        self.name = name
+        self.link = link
+        self.pageSource = None
+
 if __name__ == '__main__':
     homePath = "/JumperClwn"
     pinLinksExportFilePath = "pins.txt"
     failedPinLinksExportFilePath = "failed_pins.txt"
-    pinsPath = os.path.join(os.path.join(os.path.expanduser('~')), 'Desktop')
+    pinsPath = os.path.join(os.path.join(os.path.expanduser('~')), 'Desktop', 'Pins')
     headless = False
     pinterest = Pinterest(homePath, headless)
 
@@ -254,35 +317,27 @@ if __name__ == '__main__':
 
         FileHandler.writeDictToFile(pinLinksExportFilePath, pins)
 
-    #Test
-    fileNo = 0
-    #test
-
     # Now we have the new pins, open them and save their content.
     failedPins = dict()
     for folderName, pinLinks in pins.items():
-        failedPinLinks = []
+        failedPinInfo = []
         for pinLink in pinLinks:
-            recipeHtml = pinterest.getRecipeFromPin(pinLink)
-            if recipeHtml is None:
-                failedPinLinks.append(pinLink)
+            pinInfo = pinterest.getRecipeFromPin(pinLink)
+            if pinInfo is None:
+                failedPinInfo.append(pinInfo)
                 continue
             try:
                 folderName = folderName.removesuffix("\n")
                 folderPath = os.path.join(pinsPath, folderName)
-                FileHandler.writeHtmlToFolder(folderPath, f'{fileNo}', recipeHtml)
-                fileNo = fileNo + 1
-                # Test
-                print("Recipe written to folder: " + f'{folderName}')
-                # Test
+                FileHandler.writeHtmlToFolder(folderPath, f'{pinInfo.name}', pinInfo.pageSource)
             except:
-                failedPinLinks.append(pinLink)
+                failedPinInfo.append(pinInfo)
                 print("Failed to write recipe")
                 continue
 
-        if len(failedPinLinks) != 0:
-            failedPins[folderName] = failedPinLinks
+        if len(failedPinInfo) != 0:
+            failedPins[folderName] = failedPinInfo
 
-    FileHandler.writeDictToFile(failedPinLinksExportFilePath, failedPins)
+    PinterestFileHandler.writeFailedPinsFile(failedPinLinksExportFilePath, failedPins)
 
     pinterest.close()
